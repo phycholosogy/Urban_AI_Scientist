@@ -59,13 +59,17 @@ async function apiFetch(path, options) {
 }
 
 function showAuthOverlay() {
+  if (!authOverlay) return;
   authOverlay.hidden = false;
-  authInput.focus();
+  authOverlay.style.display = "flex";
+  if (authInput) authInput.focus();
 }
 
 function hideAuthOverlay() {
+  if (!authOverlay) return;
   authOverlay.hidden = true;
-  authError.textContent = "";
+  authOverlay.style.display = "none";
+  if (authError) authError.textContent = "";
 }
 
 function savePassword(value) {
@@ -90,6 +94,22 @@ async function validatePassword() {
     if (res.status === 401) msg = "密码错误，请重试。";
     else if (payload && typeof payload.detail === "string") msg = payload.detail;
     throw new Error(msg);
+  }
+}
+
+async function initializeAfterAuth() {
+  try {
+    await Promise.all([loadMethods(), refreshHistoryList()]);
+    updateSendButtonState();
+    autoResizeTopicInput();
+    try {
+      if (localStorage.getItem(HISTORY_OPEN_KEY) === "1") {
+        setHistoryOpen(true);
+      }
+    } catch (_) {}
+    await maybeLoadHistoryFromQuery();
+  } catch (err) {
+    console.error("Initialize after auth failed:", err);
   }
 }
 
@@ -615,15 +635,7 @@ if (authForm) authForm.addEventListener("submit", async (e) => {
   try {
     await validatePassword();
     hideAuthOverlay();
-    await Promise.all([loadMethods(), refreshHistoryList()]);
-    updateSendButtonState();
-    autoResizeTopicInput();
-    try {
-      if (localStorage.getItem(HISTORY_OPEN_KEY) === "1") {
-        setHistoryOpen(true);
-      }
-    } catch (_) {}
-    await maybeLoadHistoryFromQuery();
+    await initializeAfterAuth();
   } catch (err) {
     authError.textContent = String(err.message || err);
     clearPassword();
@@ -638,15 +650,7 @@ if (authForm) authForm.addEventListener("submit", async (e) => {
       savePassword(cached);
       await validatePassword();
       hideAuthOverlay();
-      await Promise.all([loadMethods(), refreshHistoryList()]);
-      updateSendButtonState();
-      autoResizeTopicInput();
-      try {
-        if (localStorage.getItem(HISTORY_OPEN_KEY) === "1") {
-          setHistoryOpen(true);
-        }
-      } catch (_) {}
-      await maybeLoadHistoryFromQuery();
+      await initializeAfterAuth();
       return;
     }
   } catch (_) {
