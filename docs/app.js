@@ -13,6 +13,7 @@ const authForm = document.getElementById("authForm");
 const authMode = document.getElementById("authMode");
 const authAccessPassword = document.getElementById("authAccessPassword");
 const authUsername = document.getElementById("authUsername");
+const authUsernameHint = document.getElementById("authUsernameHint");
 const authPassword = document.getElementById("authPassword");
 const authConfirmPassword = document.getElementById("authConfirmPassword");
 const authAdminPassword = document.getElementById("authAdminPassword");
@@ -43,6 +44,11 @@ const RUNNING_STATUS_TEXT = "正在运行...";
 let registry = {};
 let authToken = "";
 let currentUser = null;
+let usernameCheckState = {
+  valid: false,
+  available: false,
+  checkedValue: "",
+};
 let authConfig = {
   require_access_password_for_register: true,
   admin_enabled: true,
@@ -141,11 +147,19 @@ function updateAuthFormByMode() {
   const isAdmin = mode === "admin";
   const requireAccess = !!authConfig.require_access_password_for_register;
 
-  if (authAccessWrap) authAccessWrap.hidden = isAdmin || !isRegister || !requireAccess;
-  if (authUserWrap) authUserWrap.hidden = isAdmin;
-  if (authPassWrap) authPassWrap.hidden = isAdmin;
-  if (authConfirmWrap) authConfirmWrap.hidden = !isRegister;
-  if (authAdminWrap) authAdminWrap.hidden = !isAdmin;
+  function setWrapState(wrapEl, visible) {
+    if (!wrapEl) return;
+    wrapEl.hidden = !visible;
+    wrapEl.querySelectorAll("input,select,textarea,button").forEach((el) => {
+      el.disabled = !visible;
+    });
+  }
+
+  setWrapState(authAccessWrap, !isAdmin && isRegister && requireAccess);
+  setWrapState(authUserWrap, !isAdmin);
+  setWrapState(authPassWrap, !isAdmin);
+  setWrapState(authConfirmWrap, isRegister);
+  setWrapState(authAdminWrap, isAdmin);
 
   if (authAccessPassword) authAccessPassword.required = isRegister && requireAccess;
   if (authUsername) authUsername.required = !isAdmin;
@@ -154,9 +168,53 @@ function updateAuthFormByMode() {
   if (authAdminPassword) authAdminPassword.required = isAdmin;
 
   if (authError) authError.textContent = "";
+  if (authUsernameHint) authUsernameHint.textContent = "";
+  usernameCheckState = { valid: false, available: false, checkedValue: "" };
 
   if (isAdmin && authAdminPassword) authAdminPassword.focus();
   if (!isAdmin && authUsername) authUsername.focus();
+}
+
+function showUsernameHint(text, isError = false) {
+  if (!authUsernameHint) return;
+  authUsernameHint.textContent = text || "";
+  authUsernameHint.classList.toggle("error", !!isError);
+}
+
+function isRegisterMode() {
+  return !!authMode && authMode.value === "register";
+}
+
+async function checkUsernameAvailability() {
+  if (!authUsername) return false;
+  const username = authUsername.value.trim();
+  if (!username) {
+    usernameCheckState = { valid: false, available: false, checkedValue: "" };
+    showUsernameHint("");
+    return false;
+  }
+
+  try {
+    const res = await fetch(
+      apiUrl(`/api/auth/check-username?username=${encodeURIComponent(username)}`)
+    );
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showUsernameHint("用户名校验失败，请重试。", true);
+      usernameCheckState = { valid: false, available: false, checkedValue: username };
+      return false;
+    }
+
+    const valid = !!payload.valid;
+    const available = !!payload.available;
+    usernameCheckState = { valid, available, checkedValue: username };
+    showUsernameHint(payload.message || "", !(valid && available));
+    return valid && available;
+  } catch (_) {
+    showUsernameHint("用户名校验失败，请重试。", true);
+    usernameCheckState = { valid: false, available: false, checkedValue: username };
+    return false;
+  }
 }
 
 async function initializeAfterAuth() {
@@ -704,6 +762,22 @@ if (authMode) {
   authMode.addEventListener("change", updateAuthFormByMode);
 }
 
+if (authUsername) {
+  authUsername.addEventListener("blur", async () => {
+    if (!isRegisterMode()) return;
+    await checkUsernameAvailability();
+  });
+  authUsername.addEventListener("input", () => {
+    if (!isRegisterMode()) return;
+    usernameCheckState = {
+      valid: false,
+      available: false,
+      checkedValue: authUsername.value.trim(),
+    };
+    showUsernameHint("将自动检测用户名是否可用。");
+  });
+}
+
 if (authForm) authForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const mode = authMode ? authMode.value : "login";
@@ -714,10 +788,21 @@ if (authForm) authForm.addEventListener("submit", async (e) => {
     let body = {};
 
     if (mode === "register") {
+      const username = authUsername ? authUsername.value.trim() : "";
+      if (
+        usernameCheckState.checkedValue !== username ||
+        !usernameCheckState.valid ||
+        !usernameCheckState.available
+      ) {
+        const ok = await checkUsernameAvailability();
+        if (!ok) {
+          throw new Error("用户名不合法或已存在，请更换用户名。");
+        }
+      }
       path = "/api/auth/register";
       body = {
         access_password: authAccessPassword ? authAccessPassword.value.trim() : "",
-        username: authUsername ? authUsername.value.trim() : "",
+        username,
         password: authPassword ? authPassword.value : "",
         confirm_password: authConfirmPassword ? authConfirmPassword.value : "",
       };
