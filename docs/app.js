@@ -612,6 +612,18 @@ async function loadHistoryFile(filename, owner = null) {
   }
 }
 
+async function loadLatestHistoryRecord(owner = null) {
+  const qs = owner ? `?owner=${encodeURIComponent(owner)}` : "";
+  const res = await apiFetch(`/api/history${qs}`);
+  if (!res.ok) return false;
+  const payload = await res.json().catch(() => ({}));
+  const items = Array.isArray(payload.items) ? payload.items : [];
+  if (!items.length || !items[0].filename) return false;
+  const latest = items[0];
+  await loadHistoryFile(latest.filename, latest.owner || owner || null);
+  return true;
+}
+
 function maybeLoadHistoryFromQuery() {
   const params = new URLSearchParams(window.location.search);
   const filename = params.get("history");
@@ -737,9 +749,19 @@ form.addEventListener("submit", async (e) => {
     if (assistantEl.classList.contains("running")) {
       assistantEl.classList.remove("running");
       if (statusEl.textContent === RUNNING_STATUS_TEXT) {
-        statusEl.textContent =
-          "流已结束但未收到完成信号。若 results/web_run 下已有新 JSON，可点击“历史”刷新列表。";
-        statusEl.classList.remove("muted");
+        let autoLoaded = false;
+        try {
+          autoLoaded = await loadLatestHistoryRecord(currentUser ? currentUser.username : null);
+          if (autoLoaded) {
+            await refreshHistoryList();
+          }
+        } catch (_) {}
+
+        if (!autoLoaded) {
+          statusEl.textContent =
+            "流已结束但未收到完成信号。若 results/web_run 下已有新 JSON，可点击“历史”刷新列表。";
+          statusEl.classList.remove("muted");
+        }
       }
     }
   } catch (err) {
