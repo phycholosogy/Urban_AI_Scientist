@@ -672,6 +672,10 @@ body {
   backdrop-filter: blur(4px);
 }
 
+.auth-overlay[hidden] {
+  display: none !important;
+}
+
 .auth-card {
   width: min(420px, 100%);
   border: 1px solid var(--border);
