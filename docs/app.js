@@ -30,6 +30,7 @@ const AUTH_TOKEN_KEY = "urban_ai_auth_token";
 const AUTH_USER_KEY = "urban_ai_auth_user";
 
 const STEP_KEYS = [
+  "generation_config",
   "input_topic",
   "query_4_retrieval",
   "retrieval_indices",
@@ -261,6 +262,7 @@ function resetConversation() {
 }
 
 function labelForKey(key, labels) {
+  if (key === "generation_config") return "Generation Config";
   if (key === "idea_review") return "Idea Reviewer";
   if (key === "novelty_analysis") return "Novelty Analysis";
   if (key === "dataset_search") return "Dataset Search";
