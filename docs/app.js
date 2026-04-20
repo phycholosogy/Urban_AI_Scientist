@@ -10,12 +10,23 @@ const historyList = document.getElementById("historyList");
 const methodBadge = document.getElementById("methodBadge");
 const authOverlay = document.getElementById("authOverlay");
 const authForm = document.getElementById("authForm");
-const authInput = document.getElementById("authPassword");
+const authMode = document.getElementById("authMode");
+const authAccessPassword = document.getElementById("authAccessPassword");
+const authUsername = document.getElementById("authUsername");
+const authPassword = document.getElementById("authPassword");
+const authConfirmPassword = document.getElementById("authConfirmPassword");
+const authAdminPassword = document.getElementById("authAdminPassword");
+const authAccessWrap = document.getElementById("authAccessWrap");
+const authUserWrap = document.getElementById("authUserWrap");
+const authPassWrap = document.getElementById("authPassWrap");
+const authConfirmWrap = document.getElementById("authConfirmWrap");
+const authAdminWrap = document.getElementById("authAdminWrap");
 const authError = document.getElementById("authError");
 const authLogout = document.getElementById("authLogout");
 const APP_CONFIG = window.__APP_CONFIG__ || {};
 const API_BASE = String(APP_CONFIG.API_BASE || "").replace(/\/+$/, "");
-const PASSWORD_KEY = "urban_ai_access_password";
+const AUTH_TOKEN_KEY = "urban_ai_auth_token";
+const AUTH_USER_KEY = "urban_ai_auth_user";
 
 const STEP_KEYS = [
   "input_topic",
@@ -30,7 +41,12 @@ const STEP_KEYS = [
 
 const RUNNING_STATUS_TEXT = "正在运行...";
 let registry = {};
-let accessPassword = "";
+let authToken = "";
+let currentUser = null;
+let authConfig = {
+  require_access_password_for_register: true,
+  admin_enabled: true,
+};
 
 const HISTORY_OPEN_KEY = "urban_ai_history_drawer_open";
 const MAX_TEXTAREA_HEIGHT = 220;
@@ -51,8 +67,8 @@ function apiUrl(path) {
 async function apiFetch(path, options) {
   const opts = options ? { ...options } : {};
   const headers = opts.headers ? { ...opts.headers } : {};
-  if (accessPassword) {
-    headers["X-Access-Password"] = accessPassword;
+  if (authToken) {
+    headers["Authorization"] = `Bearer ${authToken}`;
   }
   opts.headers = headers;
   return fetch(apiUrl(path), opts);
@@ -62,7 +78,7 @@ function showAuthOverlay() {
   if (!authOverlay) return;
   authOverlay.hidden = false;
   authOverlay.style.display = "flex";
-  if (authInput) authInput.focus();
+  updateAuthFormByMode();
 }
 
 function hideAuthOverlay() {
@@ -72,29 +88,75 @@ function hideAuthOverlay() {
   if (authError) authError.textContent = "";
 }
 
-function savePassword(value) {
-  accessPassword = value;
+function saveAuthSession(token, user) {
+  authToken = token || "";
+  currentUser = user || null;
   try {
-    sessionStorage.setItem(PASSWORD_KEY, value);
+    sessionStorage.setItem(AUTH_TOKEN_KEY, authToken);
+    sessionStorage.setItem(AUTH_USER_KEY, JSON.stringify(currentUser || null));
   } catch (_) {}
 }
 
-function clearPassword() {
-  accessPassword = "";
+function clearAuthSession() {
+  authToken = "";
+  currentUser = null;
   try {
-    sessionStorage.removeItem(PASSWORD_KEY);
+    sessionStorage.removeItem(AUTH_TOKEN_KEY);
+    sessionStorage.removeItem(AUTH_USER_KEY);
   } catch (_) {}
 }
 
-async function validatePassword() {
-  const res = await apiFetch("/api/methods");
+async function validateSession() {
+  const res = await apiFetch("/api/auth/me");
   if (!res.ok) {
     let msg = `认证失败（HTTP ${res.status}）`;
     const payload = await res.json().catch(() => ({}));
-    if (res.status === 401) msg = "密码错误，请重试。";
+    if (res.status === 401) msg = "登录已失效，请重新登录。";
     else if (payload && typeof payload.detail === "string") msg = payload.detail;
     throw new Error(msg);
   }
+  const payload = await res.json().catch(() => ({}));
+  currentUser = payload.user || currentUser;
+}
+
+async function loadAuthConfig() {
+  try {
+    const res = await fetch(apiUrl("/api/auth/config"));
+    if (!res.ok) return;
+    const payload = await res.json().catch(() => ({}));
+    if (payload && typeof payload === "object") {
+      authConfig = {
+        require_access_password_for_register:
+          payload.require_access_password_for_register !== false,
+        admin_enabled: payload.admin_enabled !== false,
+      };
+    }
+  } catch (_) {}
+}
+
+function updateAuthFormByMode() {
+  if (!authMode) return;
+  const mode = authMode.value;
+  const isRegister = mode === "register";
+  const isAdmin = mode === "admin";
+  const requireAccess = !!authConfig.require_access_password_for_register;
+
+  if (authAccessWrap) authAccessWrap.hidden = isAdmin || !isRegister || !requireAccess;
+  if (authUserWrap) authUserWrap.hidden = isAdmin;
+  if (authPassWrap) authPassWrap.hidden = isAdmin;
+  if (authConfirmWrap) authConfirmWrap.hidden = !isRegister;
+  if (authAdminWrap) authAdminWrap.hidden = !isAdmin;
+
+  if (authAccessPassword) authAccessPassword.required = isRegister && requireAccess;
+  if (authUsername) authUsername.required = !isAdmin;
+  if (authPassword) authPassword.required = !isAdmin;
+  if (authConfirmPassword) authConfirmPassword.required = isRegister;
+  if (authAdminPassword) authAdminPassword.required = isAdmin;
+
+  if (authError) authError.textContent = "";
+
+  if (isAdmin && authAdminPassword) authAdminPassword.focus();
+  if (!isAdmin && authUsername) authUsername.focus();
 }
 
 async function initializeAfterAuth() {
@@ -208,7 +270,7 @@ function readErrorMessage(payload, fallback = "Request failed") {
   return fallback;
 }
 
-function mountActionButtons(actionsEl, stepsEl, statusEl, filename) {
+function mountActionButtons(actionsEl, stepsEl, statusEl, filename, owner) {
   if (!actionsEl || !filename) return;
   actionsEl.innerHTML = "";
 
@@ -232,7 +294,7 @@ function mountActionButtons(actionsEl, stepsEl, statusEl, filename) {
       const res = await apiFetch("/api/review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename }),
+        body: JSON.stringify({ filename, owner }),
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -267,7 +329,7 @@ function mountActionButtons(actionsEl, stepsEl, statusEl, filename) {
       const res = await apiFetch("/api/novelty", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename }),
+        body: JSON.stringify({ filename, owner }),
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -305,7 +367,7 @@ function mountActionButtons(actionsEl, stepsEl, statusEl, filename) {
       const res = await apiFetch("/api/dataset", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename }),
+        body: JSON.stringify({ filename, owner }),
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -329,7 +391,7 @@ function mountActionButtons(actionsEl, stepsEl, statusEl, filename) {
   actionsEl.appendChild(datasetBtn);
 }
 
-function renderHistoryRecord(data, filename) {
+function renderHistoryRecord(data, filename, owner = null) {
   resetConversation();
   const topic = data.input_topic || "(No Topic)";
   appendUserMessage(topic);
@@ -356,7 +418,7 @@ function renderHistoryRecord(data, filename) {
 
   statusEl.textContent = "以上为历史记录（只读）。";
   statusEl.classList.remove("muted", "error");
-  mountActionButtons(actionsEl, stepsEl, statusEl, filename);
+  mountActionButtons(actionsEl, stepsEl, statusEl, filename, owner);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
@@ -414,8 +476,11 @@ historyToggle.addEventListener("click", () => {
 });
 
 if (authLogout) {
-  authLogout.addEventListener("click", () => {
-    clearPassword();
+  authLogout.addEventListener("click", async () => {
+    try {
+      await apiFetch("/api/auth/logout", { method: "POST" });
+    } catch (_) {}
+    clearAuthSession();
     showAuthOverlay();
   });
 }
@@ -459,11 +524,12 @@ async function refreshHistoryList() {
       btn.type = "button";
       btn.className = "history-item";
       const topicLine = it.topic || it.filename.replace(/\.json$/i, "");
+      const ownerText = it.owner ? `[${it.owner}] ` : "";
       const tstr = it.modified
         ? new Date(it.modified * 1000).toLocaleString()
         : "";
-      btn.innerHTML = `<span class="history-item-top"><span class="hi-icon" aria-hidden="true">◷</span><span class="hi-topic">${esc(topicLine)}</span></span><span class="hi-meta">${esc(it.filename)}${tstr ? " | " + esc(tstr) : ""}</span>`;
-      btn.addEventListener("click", () => loadHistoryFile(it.filename));
+      btn.innerHTML = `<span class="history-item-top"><span class="hi-icon" aria-hidden="true">◷</span><span class="hi-topic">${esc(ownerText + topicLine)}</span></span><span class="hi-meta">${esc(it.filename)}${tstr ? " | " + esc(tstr) : ""}</span>`;
+      btn.addEventListener("click", () => loadHistoryFile(it.filename, it.owner || null));
       li.appendChild(btn);
       historyList.appendChild(li);
     }
@@ -476,12 +542,13 @@ async function refreshHistoryList() {
   }
 }
 
-async function loadHistoryFile(filename) {
+async function loadHistoryFile(filename, owner = null) {
   try {
-    const res = await apiFetch(`/api/history/${encodeURIComponent(filename)}`);
+    const qs = owner ? `?owner=${encodeURIComponent(owner)}` : "";
+    const res = await apiFetch(`/api/history/${encodeURIComponent(filename)}${qs}`);
     if (!res.ok) return;
     const data = await res.json();
-    renderHistoryRecord(data, filename);
+    renderHistoryRecord(data, filename, owner);
   } catch (e) {
     console.error(e);
   }
@@ -490,8 +557,9 @@ async function loadHistoryFile(filename) {
 function maybeLoadHistoryFromQuery() {
   const params = new URLSearchParams(window.location.search);
   const filename = params.get("history");
+  const owner = params.get("owner");
   if (!filename) return Promise.resolve();
-  return loadHistoryFile(filename);
+  return loadHistoryFile(filename, owner);
 }
 
 methodSelect.addEventListener("change", () => {
@@ -601,7 +669,7 @@ form.addEventListener("submit", async (e) => {
         statusEl.textContent = `已完成，已保存：${ev.path || ""}`;
         statusEl.classList.remove("muted", "error");
         assistantEl.classList.remove("running");
-        mountActionButtons(actionsEl, stepsEl, statusEl, ev.filename);
+        mountActionButtons(actionsEl, stepsEl, statusEl, ev.filename, ev.owner || null);
       } else if (ev.event === "error") {
         statusEl.textContent = ev.message || "未知错误";
         statusEl.classList.add("error");
@@ -632,37 +700,78 @@ form.addEventListener("submit", async (e) => {
   }
 });
 
+if (authMode) {
+  authMode.addEventListener("change", updateAuthFormByMode);
+}
+
 if (authForm) authForm.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const pwd = authInput.value.trim();
-  if (!pwd) {
-    authError.textContent = "请输入密码。";
-    return;
-  }
-  savePassword(pwd);
+  const mode = authMode ? authMode.value : "login";
+
   try {
-    await validatePassword();
+    authError.textContent = "";
+    let path = "/api/auth/login";
+    let body = {};
+
+    if (mode === "register") {
+      path = "/api/auth/register";
+      body = {
+        access_password: authAccessPassword ? authAccessPassword.value.trim() : "",
+        username: authUsername ? authUsername.value.trim() : "",
+        password: authPassword ? authPassword.value : "",
+        confirm_password: authConfirmPassword ? authConfirmPassword.value : "",
+      };
+    } else if (mode === "admin") {
+      path = "/api/auth/admin-login";
+      body = {
+        admin_password: authAdminPassword ? authAdminPassword.value.trim() : "",
+      };
+    } else {
+      body = {
+        username: authUsername ? authUsername.value.trim() : "",
+        password: authPassword ? authPassword.value : "",
+      };
+    }
+
+    const res = await apiFetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(readErrorMessage(payload, `认证失败（HTTP ${res.status}）`));
+    }
+
+    saveAuthSession(payload.token, payload.user || null);
     hideAuthOverlay();
     await initializeAfterAuth();
   } catch (err) {
     authError.textContent = String(err.message || err);
-    clearPassword();
-    authInput.select();
   }
 });
 
 (async function bootstrapAuth() {
   try {
-    const cached = sessionStorage.getItem(PASSWORD_KEY) || "";
-    if (cached) {
-      savePassword(cached);
-      await validatePassword();
+    await loadAuthConfig();
+    if (authMode && !authConfig.admin_enabled) {
+      const adminOption = authMode.querySelector('option[value="admin"]');
+      if (adminOption) adminOption.remove();
+      if (authMode.value === "admin") authMode.value = "login";
+    }
+
+    const token = sessionStorage.getItem(AUTH_TOKEN_KEY) || "";
+    const userRaw = sessionStorage.getItem(AUTH_USER_KEY) || "";
+    const user = userRaw ? JSON.parse(userRaw) : null;
+    if (token) {
+      saveAuthSession(token, user);
+      await validateSession();
       hideAuthOverlay();
       await initializeAfterAuth();
       return;
     }
   } catch (_) {
-    clearPassword();
+    clearAuthSession();
   }
   showAuthOverlay();
 })();

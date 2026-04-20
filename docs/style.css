@@ -697,7 +697,19 @@ body {
   margin-top: 0.8rem;
 }
 
-.auth-form input {
+.auth-form label {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.auth-form > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.auth-form input,
+.auth-form select {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -708,7 +720,8 @@ body {
   padding: 0.62rem 0.75rem;
 }
 
-.auth-form input:focus {
+.auth-form input:focus,
+.auth-form select:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);

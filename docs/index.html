@@ -75,11 +75,42 @@
   </div>
   <div class="auth-overlay" id="authOverlay" hidden>
     <div class="auth-card">
-      <h2>访问验证</h2>
-      <p class="muted">请输入访问密码后继续。</p>
+      <h2>账号登录</h2>
+      <p class="muted">普通用户可注册/登录；管理员使用管理员密码登录。</p>
       <form id="authForm" class="auth-form">
-        <input id="authPassword" type="password" autocomplete="current-password" placeholder="输入访问密码" required />
-        <button type="submit" class="send-btn">进入网站</button>
+        <label for="authMode">模式</label>
+        <select id="authMode">
+          <option value="register">首次注册</option>
+          <option value="login">用户登录</option>
+          <option value="admin">管理员登录</option>
+        </select>
+
+        <div id="authAccessWrap">
+          <label for="authAccessPassword">访问密码</label>
+          <input id="authAccessPassword" type="password" autocomplete="off" placeholder="输入访问密码（注册用）" />
+        </div>
+
+        <div id="authUserWrap">
+          <label for="authUsername">用户名</label>
+          <input id="authUsername" type="text" autocomplete="username" placeholder="输入用户名" />
+        </div>
+
+        <div id="authPassWrap">
+          <label for="authPassword">密码</label>
+          <input id="authPassword" type="password" autocomplete="current-password" placeholder="输入密码" />
+        </div>
+
+        <div id="authConfirmWrap">
+          <label for="authConfirmPassword">确认密码</label>
+          <input id="authConfirmPassword" type="password" autocomplete="new-password" placeholder="再次输入密码" />
+        </div>
+
+        <div id="authAdminWrap" hidden>
+          <label for="authAdminPassword">管理员密码</label>
+          <input id="authAdminPassword" type="password" autocomplete="off" placeholder="输入管理员密码" />
+        </div>
+
+        <button type="submit" class="send-btn">继续</button>
       </form>
       <p id="authError" class="status-line error"></p>
     </div>
