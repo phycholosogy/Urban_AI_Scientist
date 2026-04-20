@@ -491,10 +491,10 @@ function renderParamForm(methodId) {
     field.className = "field";
     const inputId = `param-${p.id}`;
     let inputHtml = "";
-    if (p.type === "float") {
+    if (p.type === "float" || p.type === "int") {
       const min = p.min != null ? ` min="${p.min}"` : "";
       const max = p.max != null ? ` max="${p.max}"` : "";
-      const step = ` step="0.05"`;
+      const step = p.type === "int" ? ` step="1"` : ` step="0.05"`;
       inputHtml = `<input type="number" id="${inputId}" data-param="${p.id}" value="${p.default}"${min}${max}${step} />`;
     } else if (p.type === "select" && Array.isArray(p.options)) {
       const optionsHtml = p.options
@@ -517,8 +517,12 @@ function collectParams() {
   const out = {};
   paramFields.querySelectorAll("[data-param]").forEach((el) => {
     const id = el.getAttribute("data-param");
-    if (el.type === "number") out[id] = parseFloat(el.value);
-    else out[id] = el.value;
+    if (el.type === "number") {
+      const raw = el.value;
+      out[id] = raw.includes(".") ? parseFloat(raw) : parseInt(raw, 10);
+    } else {
+      out[id] = el.value;
+    }
   });
   return out;
 }
