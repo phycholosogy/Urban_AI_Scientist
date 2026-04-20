@@ -253,8 +253,8 @@ function updateSendButtonState() {
 
 function updateComposerModeUI() {
   if (currentConversation.mode === "history" && currentConversation.filename) {
-    topicInput.placeholder = "输入问题，基于该对话的 Idea 与检索文章继续交流";
-    sendBtn.textContent = "发送";
+    topicInput.placeholder = "输入你对该 Idea 的评价/补充，提交后仅记录；点击 Generate_response 才触发 LLM 回复";
+    sendBtn.textContent = "记录";
   } else {
     topicInput.placeholder = "输入研究主题或关键词，例如：城市热岛与公共健康";
     sendBtn.textContent = "生成";
@@ -498,6 +498,43 @@ function mountActionButtons(actionsEl, stepsEl, statusEl, filename, owner) {
   });
 
   actionsEl.appendChild(datasetBtn);
+
+  const genRespBtn = document.createElement("button");
+  genRespBtn.type = "button";
+  genRespBtn.className = "action-btn";
+  genRespBtn.textContent = "Generate_response";
+
+  genRespBtn.addEventListener("click", async () => {
+    genRespBtn.disabled = true;
+    statusEl.textContent = "正在生成 LLM 回复...";
+    statusEl.classList.remove("error", "muted");
+
+    try {
+      const res = await apiFetch("/api/chat/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename, owner }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(readErrorMessage(payload, `HTTP ${res.status}`));
+      }
+
+      appendAssistantTextMessage(payload.reply || "(空响应)");
+      const n = Number(payload.consumed_user_notes || 0);
+      statusEl.textContent = `已生成回复（合并 ${Number.isFinite(n) ? n : 0} 条待回复输入）。`;
+      statusEl.classList.remove("error", "muted");
+      await refreshHistoryList();
+    } catch (e) {
+      statusEl.textContent = `Generate_response 调用失败: ${e}`;
+      statusEl.classList.add("error");
+    } finally {
+      genRespBtn.disabled = false;
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+  });
+
+  actionsEl.appendChild(genRespBtn);
 }
 
 function renderHistoryRecord(data, filename, owner = null) {
@@ -783,13 +820,9 @@ form.addEventListener("submit", async (e) => {
   if (currentConversation.mode === "history" && currentConversation.filename) {
     sendBtn.disabled = true;
     appendUserMessage(inputText);
-    const statusAssistant = appendAssistantShell();
-    const statusEl = statusAssistant.querySelector(".status-line");
-    statusEl.textContent = "正在回答...";
-    statusEl.classList.remove("muted", "error");
 
     try {
-      const res = await apiFetch("/api/chat", {
+      const res = await apiFetch("/api/chat/note", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -802,14 +835,9 @@ form.addEventListener("submit", async (e) => {
       if (!res.ok) {
         throw new Error(readErrorMessage(payload, `HTTP ${res.status}`));
       }
-
-      statusAssistant.remove();
-      appendAssistantTextMessage(payload.reply || "(空响应)");
       await refreshHistoryList();
     } catch (err) {
-      statusEl.textContent = String(err);
-      statusEl.classList.add("error");
-      statusAssistant.classList.remove("running");
+      appendAssistantTextMessage(`记录失败：${String(err)}`);
     } finally {
       sendBtn.disabled = false;
       topicInput.value = "";
