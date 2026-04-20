@@ -374,6 +374,14 @@ function renderParamForm(methodId) {
       const max = p.max != null ? ` max="${p.max}"` : "";
       const step = ` step="0.05"`;
       inputHtml = `<input type="number" id="${inputId}" data-param="${p.id}" value="${p.default}"${min}${max}${step} />`;
+    } else if (p.type === "select" && Array.isArray(p.options)) {
+      const optionsHtml = p.options
+        .map((opt) => {
+          const selected = String(opt) === String(p.default) ? " selected" : "";
+          return `<option value="${esc(String(opt))}"${selected}>${esc(String(opt))}</option>`;
+        })
+        .join("");
+      inputHtml = `<select id="${inputId}" data-param="${p.id}">${optionsHtml}</select>`;
     } else {
       inputHtml = `<input type="text" id="${inputId}" data-param="${p.id}" value="${esc(String(p.default))}" />`;
     }
