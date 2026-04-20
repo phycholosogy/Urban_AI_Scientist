@@ -708,6 +708,10 @@ body {
   gap: 0.3rem;
 }
 
+.auth-form > div[hidden] {
+  display: none !important;
+}
+
 .auth-form input,
 .auth-form select {
   width: 100%;
