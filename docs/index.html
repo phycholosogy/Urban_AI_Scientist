@@ -1,0 +1,78 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Urban AI Scientist · Idea Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div class="layout">
+    <div class="center-stack">
+      <aside class="history-drawer" id="historyDrawer" aria-label="历史记录">
+        <div class="history-inner">
+          <h2 class="history-title">History</h2>
+          <p class="muted history-hint">点击任意记录会在当前页面重新加载。</p>
+          <ul class="history-list" id="historyList"></ul>
+        </div>
+      </aside>
+
+      <div class="chat-column">
+        <header class="chat-topbar">
+          <div class="topbar-left">
+            <button type="button" class="icon-btn" id="historyToggle" aria-expanded="false" aria-controls="historyDrawer" title="打开/收起历史">
+              <svg class="icon-svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                <path d="M4 6h16M4 12h16M4 18h10" />
+              </svg>
+            </button>
+            <div class="topbar-brand">
+              <span class="brand-mark" aria-hidden="true"></span>
+              <div class="topbar-titles">
+                <span class="app-title">Idea Studio</span>
+                <span class="app-tagline">Urban AI Scientist</span>
+              </div>
+            </div>
+          </div>
+          <div class="topbar-right">
+            <span class="pill" id="methodBadge">Method: -</span>
+          </div>
+        </header>
+
+        <main class="chat-panel">
+          <div class="messages" id="messages"></div>
+          <div class="composer-wrap">
+            <form class="composer" id="form">
+              <textarea id="topicInput" rows="2" placeholder="输入研究主题或关键词，例如：城市热岛与公共健康" required></textarea>
+              <button type="submit" id="sendBtn" class="send-btn" disabled>生成</button>
+            </form>
+            <div class="composer-meta muted">Enter 发送，Shift+Enter 换行</div>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <aside class="settings-panel" aria-label="生成设置">
+      <div class="settings-head">
+        <p class="settings-kicker">Workspace</p>
+        <h1>生成配置</h1>
+        <p class="muted">选择方法与参数，然后在中间区域查看完整生成步骤与评审结果。</p>
+      </div>
+
+      <div class="settings-card">
+        <div class="field">
+          <label for="methodSelect">生成方法</label>
+          <select id="methodSelect"></select>
+        </div>
+        <div id="paramFields" class="param-fields"></div>
+      </div>
+
+      <p class="hint muted">提示：生成完成后可点击 <code>Idea_reviewer</code>、<code>Novelty_analysis</code> 或 <code>Dataset_search</code> 执行后处理。</p>
+    </aside>
+  </div>
+  <script src="./config.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
