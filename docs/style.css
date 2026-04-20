@@ -98,6 +98,29 @@ body {
   line-height: 1.5;
 }
 
+.new-chat-btn {
+  width: 100%;
+  margin-top: 0.75rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 0.55rem 0.72rem;
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, transform 0.12s ease, filter 0.15s ease;
+}
+
+.new-chat-btn:hover {
+  box-shadow: var(--shadow-sm);
+  filter: brightness(0.98);
+}
+
+.new-chat-btn:active {
+  transform: translateY(1px);
+}
+
 .history-list {
   list-style: none;
   margin: 0;

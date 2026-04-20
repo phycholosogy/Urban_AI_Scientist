@@ -7,6 +7,7 @@ const paramFields = document.getElementById("paramFields");
 const historyDrawer = document.getElementById("historyDrawer");
 const historyToggle = document.getElementById("historyToggle");
 const historyList = document.getElementById("historyList");
+const newChatBtn = document.getElementById("newChatBtn");
 const methodBadge = document.getElementById("methodBadge");
 const authOverlay = document.getElementById("authOverlay");
 const authForm = document.getElementById("authForm");
@@ -53,6 +54,11 @@ let usernameCheckState = {
 let authConfig = {
   require_access_password_for_register: true,
   admin_enabled: true,
+};
+let currentConversation = {
+  mode: "new", // "new" | "history"
+  filename: null,
+  owner: null,
 };
 
 const HISTORY_OPEN_KEY = "urban_ai_history_drawer_open";
@@ -221,6 +227,7 @@ async function checkUsernameAvailability() {
 async function initializeAfterAuth() {
   try {
     await Promise.all([loadMethods(), refreshHistoryList()]);
+    startNewConversation();
     updateSendButtonState();
     autoResizeTopicInput();
     try {
@@ -242,6 +249,39 @@ function stepLabelsForMethod(methodId) {
 function updateSendButtonState() {
   const hasTopic = !!topicInput.value.trim();
   sendBtn.disabled = !hasTopic;
+}
+
+function updateComposerModeUI() {
+  if (currentConversation.mode === "history" && currentConversation.filename) {
+    topicInput.placeholder = "输入问题，基于该对话的 Idea 与检索文章继续交流";
+    sendBtn.textContent = "发送";
+  } else {
+    topicInput.placeholder = "输入研究主题或关键词，例如：城市热岛与公共健康";
+    sendBtn.textContent = "生成";
+  }
+}
+
+function startNewConversation() {
+  currentConversation = {
+    mode: "new",
+    filename: null,
+    owner: null,
+  };
+  resetConversation();
+  updateComposerModeUI();
+  topicInput.value = "";
+  updateSendButtonState();
+  autoResizeTopicInput();
+  topicInput.focus();
+}
+
+function activateHistoryConversation(filename, owner = null) {
+  currentConversation = {
+    mode: "history",
+    filename,
+    owner,
+  };
+  updateComposerModeUI();
 }
 
 function autoResizeTopicInput() {
@@ -273,6 +313,15 @@ function appendUserMessage(text) {
   const div = document.createElement("div");
   div.className = "msg user";
   div.innerHTML = `<div class="msg-role">User</div><div>${esc(text)}</div>`;
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return div;
+}
+
+function appendAssistantTextMessage(text) {
+  const div = document.createElement("div");
+  div.className = "msg assistant";
+  div.innerHTML = `<div class="msg-role">Assistant</div><div>${esc(text)}</div>`;
   messagesEl.appendChild(div);
   messagesEl.scrollTop = messagesEl.scrollHeight;
   return div;
@@ -452,6 +501,7 @@ function mountActionButtons(actionsEl, stepsEl, statusEl, filename, owner) {
 }
 
 function renderHistoryRecord(data, filename, owner = null) {
+  activateHistoryConversation(filename, owner);
   resetConversation();
   const topic = data.input_topic || "(No Topic)";
   appendUserMessage(topic);
@@ -476,9 +526,21 @@ function renderHistoryRecord(data, filename, owner = null) {
     addStep(stepsEl, key, labelForKey(key, labels), payload);
   }
 
-  statusEl.textContent = "以上为历史记录（只读）。";
+  statusEl.textContent = "以上为历史记录，可继续提问。";
   statusEl.classList.remove("muted", "error");
   mountActionButtons(actionsEl, stepsEl, statusEl, filename, owner);
+
+  if (Array.isArray(data.chat_history)) {
+    for (const turn of data.chat_history) {
+      if (!turn || typeof turn !== "object") continue;
+      const role = String(turn.role || "").toLowerCase();
+      const content = String(turn.content || "").trim();
+      if (!content) continue;
+      if (role === "user") appendUserMessage(content);
+      if (role === "assistant") appendAssistantTextMessage(content);
+    }
+  }
+
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
@@ -538,6 +600,13 @@ function setHistoryOpen(open) {
 historyToggle.addEventListener("click", () => {
   setHistoryOpen(!historyDrawer.classList.contains("open"));
 });
+
+if (newChatBtn) {
+  newChatBtn.addEventListener("click", () => {
+    startNewConversation();
+    setHistoryOpen(false);
+  });
+}
 
 if (authLogout) {
   authLogout.addEventListener("click", async () => {
@@ -610,11 +679,13 @@ async function loadHistoryFile(filename, owner = null) {
   try {
     const qs = owner ? `?owner=${encodeURIComponent(owner)}` : "";
     const res = await apiFetch(`/api/history/${encodeURIComponent(filename)}${qs}`);
-    if (!res.ok) return;
+    if (!res.ok) return false;
     const data = await res.json();
     renderHistoryRecord(data, filename, owner);
+    return true;
   } catch (e) {
     console.error(e);
+    return false;
   }
 }
 
@@ -634,7 +705,7 @@ function maybeLoadHistoryFromQuery() {
   const params = new URLSearchParams(window.location.search);
   const filename = params.get("history");
   const owner = params.get("owner");
-  if (!filename) return Promise.resolve();
+  if (!filename) return Promise.resolve(false);
   return loadHistoryFile(filename, owner);
 }
 
@@ -706,9 +777,50 @@ async function parseSSEStream(response) {
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const topic = topicInput.value.trim();
-  if (!topic) return;
+  const inputText = topicInput.value.trim();
+  if (!inputText) return;
 
+  if (currentConversation.mode === "history" && currentConversation.filename) {
+    sendBtn.disabled = true;
+    appendUserMessage(inputText);
+    const statusAssistant = appendAssistantShell();
+    const statusEl = statusAssistant.querySelector(".status-line");
+    statusEl.textContent = "正在回答...";
+    statusEl.classList.remove("muted", "error");
+
+    try {
+      const res = await apiFetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filename: currentConversation.filename,
+          owner: currentConversation.owner,
+          message: inputText,
+        }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(readErrorMessage(payload, `HTTP ${res.status}`));
+      }
+
+      statusAssistant.remove();
+      appendAssistantTextMessage(payload.reply || "(空响应)");
+      await refreshHistoryList();
+    } catch (err) {
+      statusEl.textContent = String(err);
+      statusEl.classList.add("error");
+      statusAssistant.classList.remove("running");
+    } finally {
+      sendBtn.disabled = false;
+      topicInput.value = "";
+      updateSendButtonState();
+      autoResizeTopicInput();
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+    return;
+  }
+
+  const topic = inputText;
   sendBtn.disabled = true;
   resetConversation();
   appendUserMessage(topic);
@@ -746,6 +858,7 @@ form.addEventListener("submit", async (e) => {
         statusEl.classList.remove("muted", "error");
         assistantEl.classList.remove("running");
         mountActionButtons(actionsEl, stepsEl, statusEl, ev.filename, ev.owner || null);
+        activateHistoryConversation(ev.filename, ev.owner || null);
       } else if (ev.event === "error") {
         statusEl.textContent = ev.message || "未知错误";
         statusEl.classList.add("error");
@@ -779,6 +892,7 @@ form.addEventListener("submit", async (e) => {
     topicInput.value = "";
     updateSendButtonState();
     autoResizeTopicInput();
+    updateComposerModeUI();
     messagesEl.scrollTop = messagesEl.scrollHeight;
     if (res && res.ok) {
       refreshHistoryList();
