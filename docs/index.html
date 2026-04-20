@@ -38,6 +38,7 @@
           </div>
           <div class="topbar-right">
             <span class="pill" id="methodBadge">Method: -</span>
+            <button type="button" class="icon-btn" id="authLogout" title="重新输入密码">🔒</button>
           </div>
         </header>
 
@@ -71,6 +72,17 @@
 
       <p class="hint muted">提示：生成完成后可点击 <code>Idea_reviewer</code>、<code>Novelty_analysis</code> 或 <code>Dataset_search</code> 执行后处理。</p>
     </aside>
+  </div>
+  <div class="auth-overlay" id="authOverlay" hidden>
+    <div class="auth-card">
+      <h2>访问验证</h2>
+      <p class="muted">请输入访问密码后继续。</p>
+      <form id="authForm" class="auth-form">
+        <input id="authPassword" type="password" autocomplete="current-password" placeholder="输入访问密码" required />
+        <button type="submit" class="send-btn">进入网站</button>
+      </form>
+      <p id="authError" class="status-line error"></p>
+    </div>
   </div>
   <script src="./config.js"></script>
   <script src="./app.js"></script>

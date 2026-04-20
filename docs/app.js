@@ -8,8 +8,14 @@ const historyDrawer = document.getElementById("historyDrawer");
 const historyToggle = document.getElementById("historyToggle");
 const historyList = document.getElementById("historyList");
 const methodBadge = document.getElementById("methodBadge");
+const authOverlay = document.getElementById("authOverlay");
+const authForm = document.getElementById("authForm");
+const authInput = document.getElementById("authPassword");
+const authError = document.getElementById("authError");
+const authLogout = document.getElementById("authLogout");
 const APP_CONFIG = window.__APP_CONFIG__ || {};
 const API_BASE = String(APP_CONFIG.API_BASE || "").replace(/\/+$/, "");
+const PASSWORD_KEY = "urban_ai_access_password";
 
 const STEP_KEYS = [
   "input_topic",
@@ -24,6 +30,7 @@ const STEP_KEYS = [
 
 const RUNNING_STATUS_TEXT = "正在运行...";
 let registry = {};
+let accessPassword = "";
 
 const HISTORY_OPEN_KEY = "urban_ai_history_drawer_open";
 const MAX_TEXTAREA_HEIGHT = 220;
@@ -42,7 +49,48 @@ function apiUrl(path) {
 }
 
 async function apiFetch(path, options) {
-  return fetch(apiUrl(path), options);
+  const opts = options ? { ...options } : {};
+  const headers = opts.headers ? { ...opts.headers } : {};
+  if (accessPassword) {
+    headers["X-Access-Password"] = accessPassword;
+  }
+  opts.headers = headers;
+  return fetch(apiUrl(path), opts);
+}
+
+function showAuthOverlay() {
+  authOverlay.hidden = false;
+  authInput.focus();
+}
+
+function hideAuthOverlay() {
+  authOverlay.hidden = true;
+  authError.textContent = "";
+}
+
+function savePassword(value) {
+  accessPassword = value;
+  try {
+    sessionStorage.setItem(PASSWORD_KEY, value);
+  } catch (_) {}
+}
+
+function clearPassword() {
+  accessPassword = "";
+  try {
+    sessionStorage.removeItem(PASSWORD_KEY);
+  } catch (_) {}
+}
+
+async function validatePassword() {
+  const res = await apiFetch("/api/methods");
+  if (!res.ok) {
+    let msg = `认证失败（HTTP ${res.status}）`;
+    const payload = await res.json().catch(() => ({}));
+    if (res.status === 401) msg = "密码错误，请重试。";
+    else if (payload && typeof payload.detail === "string") msg = payload.detail;
+    throw new Error(msg);
+  }
 }
 
 function stepLabelsForMethod(methodId) {
@@ -337,6 +385,13 @@ historyToggle.addEventListener("click", () => {
   setHistoryOpen(!historyDrawer.classList.contains("open"));
 });
 
+if (authLogout) {
+  authLogout.addEventListener("click", () => {
+    clearPassword();
+    showAuthOverlay();
+  });
+}
+
 async function loadMethods() {
   const res = await apiFetch("/api/methods");
   registry = await res.json();
@@ -549,8 +604,18 @@ form.addEventListener("submit", async (e) => {
   }
 });
 
-Promise.all([loadMethods(), refreshHistoryList()])
-  .then(async () => {
+if (authForm) authForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const pwd = authInput.value.trim();
+  if (!pwd) {
+    authError.textContent = "请输入密码。";
+    return;
+  }
+  savePassword(pwd);
+  try {
+    await validatePassword();
+    hideAuthOverlay();
+    await Promise.all([loadMethods(), refreshHistoryList()]);
     updateSendButtonState();
     autoResizeTopicInput();
     try {
@@ -559,5 +624,33 @@ Promise.all([loadMethods(), refreshHistoryList()])
       }
     } catch (_) {}
     await maybeLoadHistoryFromQuery();
-  })
-  .catch(console.error);
+  } catch (err) {
+    authError.textContent = String(err.message || err);
+    clearPassword();
+    authInput.select();
+  }
+});
+
+(async function bootstrapAuth() {
+  try {
+    const cached = sessionStorage.getItem(PASSWORD_KEY) || "";
+    if (cached) {
+      savePassword(cached);
+      await validatePassword();
+      hideAuthOverlay();
+      await Promise.all([loadMethods(), refreshHistoryList()]);
+      updateSendButtonState();
+      autoResizeTopicInput();
+      try {
+        if (localStorage.getItem(HISTORY_OPEN_KEY) === "1") {
+          setHistoryOpen(true);
+        }
+      } catch (_) {}
+      await maybeLoadHistoryFromQuery();
+      return;
+    }
+  } catch (_) {
+    clearPassword();
+  }
+  showAuthOverlay();
+})();
