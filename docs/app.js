@@ -379,6 +379,13 @@ function readErrorMessage(payload, fallback = "Request failed") {
   return fallback;
 }
 
+async function readHistoryPayload(filename, owner = null) {
+  const qs = owner ? `?owner=${encodeURIComponent(owner)}` : "";
+  const res = await apiFetch(`/api/history/${encodeURIComponent(filename)}${qs}`);
+  if (!res.ok) return null;
+  return res.json().catch(() => null);
+}
+
 function mountActionButtons(actionsEl, stepsEl, statusEl, filename, owner) {
   if (!actionsEl || !filename) return;
   actionsEl.innerHTML = "";
@@ -451,8 +458,22 @@ function mountActionButtons(actionsEl, stepsEl, statusEl, filename, owner) {
       statusEl.classList.remove("error", "muted");
       await refreshHistoryList();
     } catch (e) {
-      statusEl.textContent = `Novelty Analysis 调用失败: ${e}`;
-      statusEl.classList.add("error");
+      let recovered = false;
+      try {
+        const latest = await readHistoryPayload(filename, owner);
+        if (latest && latest.novelty_analysis !== undefined) {
+          upsertStep("novelty_analysis", "Novelty Analysis", latest.novelty_analysis);
+          statusEl.textContent = "Novelty Analysis 已完成（请求返回异常，但结果已成功写入历史记录）。";
+          statusEl.classList.remove("error", "muted");
+          await refreshHistoryList();
+          recovered = true;
+        }
+      } catch (_) {}
+
+      if (!recovered) {
+        statusEl.textContent = `Novelty Analysis 调用失败: ${e}`;
+        statusEl.classList.add("error");
+      }
     } finally {
       noveltyBtn.disabled = false;
       messagesEl.scrollTop = messagesEl.scrollHeight;
