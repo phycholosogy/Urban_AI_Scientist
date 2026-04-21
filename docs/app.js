@@ -386,6 +386,24 @@ async function readHistoryPayload(filename, owner = null) {
   return res.json().catch(() => null);
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForHistoryField(filename, owner, field, opts = {}) {
+  const timeoutMs = Number.isFinite(opts.timeoutMs) ? opts.timeoutMs : 18000;
+  const intervalMs = Number.isFinite(opts.intervalMs) ? opts.intervalMs : 1200;
+  const start = Date.now();
+  while (Date.now() - start <= timeoutMs) {
+    const latest = await readHistoryPayload(filename, owner).catch(() => null);
+    if (latest && latest[field] !== undefined) {
+      return latest[field];
+    }
+    await sleep(intervalMs);
+  }
+  return undefined;
+}
+
 function mountActionButtons(actionsEl, stepsEl, statusEl, filename, owner) {
   if (!actionsEl || !filename) return;
   actionsEl.innerHTML = "";
@@ -460,9 +478,14 @@ function mountActionButtons(actionsEl, stepsEl, statusEl, filename, owner) {
     } catch (e) {
       let recovered = false;
       try {
-        const latest = await readHistoryPayload(filename, owner);
-        if (latest && latest.novelty_analysis !== undefined) {
-          upsertStep("novelty_analysis", "Novelty Analysis", latest.novelty_analysis);
+        statusEl.textContent = "请求返回异常，正在自动回查 Novelty Analysis 结果...";
+        statusEl.classList.remove("error", "muted");
+        const novelty = await waitForHistoryField(filename, owner, "novelty_analysis", {
+          timeoutMs: 20000,
+          intervalMs: 1200,
+        });
+        if (novelty !== undefined) {
+          upsertStep("novelty_analysis", "Novelty Analysis", novelty);
           statusEl.textContent = "Novelty Analysis 已完成（请求返回异常，但结果已成功写入历史记录）。";
           statusEl.classList.remove("error", "muted");
           await refreshHistoryList();
