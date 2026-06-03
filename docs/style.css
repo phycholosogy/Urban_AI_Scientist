@@ -314,7 +314,7 @@ body {
 }
 
 .messages:empty::before {
-  content: "开始一次新想法生成，系统会按步骤展示检索、CAMP 与最终 Idea。";
+  content: "开始一次新想法生成，系统会按所选 pipeline 展示分析过程与最终 Idea。";
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius-md);
   color: var(--muted);
