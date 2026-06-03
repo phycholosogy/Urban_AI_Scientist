@@ -590,7 +590,8 @@ function renderHistoryRecord(data, filename, owner = null) {
   const stepsEl = assistantEl.querySelector(".steps");
   const statusEl = assistantEl.querySelector(".status-line");
   const actionsEl = assistantEl.querySelector(".msg-actions");
-  const labels = stepLabelsForMethod(methodSelect.value);
+  const historyMethod = data.generation_config?.method || methodSelect.value;
+  const labels = stepLabelsForMethod(historyMethod);
 
   for (const key of STEP_KEYS) {
     if (key === "input_topic") {
