@@ -1,3 +1,3 @@
 window.__APP_CONFIG__ = {
-  API_BASE: "https://discipline-continued-memories-beverly.trycloudflare.com",
+  API_BASE: "https://classroom-craft-sacrifice-modelling.trycloudflare.com",
 };
