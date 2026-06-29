@@ -2,7 +2,7 @@
 name: idea-creator-user-llm
 description: Generate research ideas with three methods. CAMP calls the Urban AI Scientist backend (server-side prompts + paper DB + user API key). DIRECT is Claude-native reasoning — no API key or backend needed. FAST calls the user's LLM directly with an urban science expert prompt, generating 1 idea. Use when the user invokes `/idea-creator-user-llm`.
 argument-hint: [CAMP|DIRECT|FAST] [--temperature 0.5] [--paper_domain "Urban Science"] [--retrieval_limit 5] [--retrieval_method mixture] <research topic>
-allowed-tools: Bash(*), Read, Write
+allowed-tools: Bash(*), Read, Write, WebSearch, WebFetch
 ---
 
 # Idea Creator — User LLM
@@ -11,7 +11,7 @@ Generate structured research ideas by supplying your own LLM API key.
 
 Three methods:
 - **CAMP**: Server-side paper retrieval → CAMP hypothesis generation → idea (calls backend, requires API key)
-- **DIRECT**: Claude-native reasoning — no external API, no backend, no credentials needed. Claude designs the research strategy and generates the idea entirely by itself.
+- **DIRECT**: Claude-native reasoning — no external API, no backend, no credentials needed. Claude autonomously decides whether to search for relevant papers using its built-in web search tools, then designs the research strategy and generates the idea.
 - **FAST**: Direct LLM call — generates 1 idea using a built-in urban science expert prompt. Requires API key; no backend needed.
 
 ⚠️ **Security notice (CAMP/FAST only)**: Your API key is sent in the HTTPS request body
@@ -124,20 +124,38 @@ print(m.group(1) if m else '')
 fi
 ```
 
-### Step 4-DIRECT: Claude-Native Idea Generation (no API calls)
+### Step 4-DIRECT: Claude-Native Idea Generation (with optional web search)
 
-No external calls of any kind. Claude generates the idea entirely by itself.
+No external API or backend calls. Claude generates the idea by itself, and autonomously decides whether to first search for relevant papers using its built-in `WebSearch` / `WebFetch` tools.
 
-**1. Design the research strategy internally**: Given the topic, analyze the strongest, most feasible research direction — evaluate novelty, empirical testability, available data, and methodology. Select one focused direction.
+**0. Decide whether to search for papers** (Claude's autonomous judgment — do not ask the user):
+
+Search if **any** of the following apply:
+- The topic involves recent empirical trends, datasets, or domain-specific findings that may post-date Claude's training
+- Identifying a concrete research gap requires knowing what has already been published
+- A targeted search would plausibly reveal methodological precedents worth building on or departing from
+
+Skip search if: the topic is sufficiently conceptual or broad that Claude's existing knowledge is clearly adequate, or if forming a meaningful query is impractical.
+
+**If searching** — use Claude's built-in `WebSearch` / `WebFetch` tools (no user credentials required):
+1. Construct 2–4 targeted queries, for example:
+   - `"<topic>" urban science site:arxiv.org`
+   - `"<topic>" empirical study`
+   - `"<topic>" review methodology`
+2. Skim titles and abstracts from results; fetch full abstracts via `WebFetch` when a result looks closely relevant
+3. Record the 3–5 most relevant papers: **title, authors, year, key contribution** — these will be used to identify the research gap and populate the References section in the output
+4. Print progress: `[web search] ✓  found N relevant papers`
+
+**1. Design the research strategy**: Given the topic (and retrieved papers if any), analyze the strongest, most feasible research direction — evaluate novelty, empirical testability, available data, and methodology. If papers were retrieved, explicitly identify the gap relative to existing work. Select one focused direction.
 
 **2. Generate the idea** with these components:
 - A clear, falsifiable research title
-- An abstract (150–250 words) describing the research gap, question, data, method, expected hypothesis or relationship, and contribution
+- An abstract (150–250 words) describing the research gap, question, proposed data and method, expected hypothesis or relationship, and contribution
 
 **3. Quality-check the generated idea**:
 - Is the research question clear and falsifiable?
 - Is the methodology feasible with available data?
-- Is the contribution novel relative to existing work?
+- Is the contribution novel (relative to retrieved papers if any, or to Claude's training knowledge)?
 - If any criterion fails, refine the idea before saving.
 
 ### Step 4-FAST: Direct LLM Generation (1 idea)
@@ -340,6 +358,7 @@ Filename: `./idea-output/YYYY-MM-DD_<topic-slug>_direct.md`
 
 **Method**: DIRECT
 **Topic**: <topic>
+**Web Search**: <Yes — N papers consulted | No>
 **Parameters**: <non-default params if any>
 **Generated**: <ISO timestamp>
 
@@ -348,6 +367,11 @@ Filename: `./idea-output/YYYY-MM-DD_<topic-slug>_direct.md`
 
 ## Abstract
 <abstract>
+
+## References Consulted
+<!-- Include only if web search was performed; omit this section entirely otherwise -->
+- <Author(s) (Year). Title. Venue/URL>
+- ...
 ```
 
 #### CAMP — save single idea from `/tmp/urban_ai_done.json`:
@@ -397,4 +421,4 @@ Show:
 - **Show step progress** so the user can see generation is proceeding.
 - Credentials file missing (CAMP/FAST) → print setup instructions and stop cleanly.
 - CONFIG_PAGE fetch failure (CAMP) → print troubleshooting hint and stop cleanly.
-- **DIRECT is fully offline** — works even when the backend and user's LLM provider are unreachable.
+- **DIRECT can optionally use web search** — Claude's built-in `WebSearch`/`WebFetch` tools require no credentials. If web search is unavailable, Claude falls back to generating the idea from its own knowledge without error.
