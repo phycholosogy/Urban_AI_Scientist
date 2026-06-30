@@ -1,7 +1,7 @@
 ---
 name: idea-creator-user-llm
 description: Generate research ideas with three methods. CAMP calls the Urban AI Scientist backend (server-side prompts + paper DB + user API key). DIRECT is Claude-native reasoning — no API key or backend needed. FAST calls the user's LLM directly with an urban science expert prompt, generating 1 idea. Use when the user invokes `/idea-creator-user-llm`.
-argument-hint: [CAMP|DIRECT|FAST] [--temperature 0.5] [--paper_domain "Urban Science"] [--retrieval_limit 5] [--retrieval_method mixture] <research topic>
+argument-hint: [CAMP|DIRECT|FAST|novelty] [--temperature 0.5] [--paper_domain "Urban Science"] [--retrieval_limit 5] [--retrieval_method mixture] [--source semantic|arxiv] <topic or .md path>
 allowed-tools: Bash(*), Read, Write, WebSearch, WebFetch
 ---
 
@@ -52,7 +52,7 @@ automatically from the project's GitHub Pages config — no local setup required
 
 - **CONFIG_PAGE**: `https://phycholosogy.github.io/Urban_AI_Scientist/config.js`
 - **API_BASE**: resolved dynamically from `USER_LLM_API_BASE` key in CONFIG_PAGE (CAMP only)
-- **METHODS**: `camp`, `direct`, `fast`
+- **METHODS**: `camp`, `direct`, `fast`, `novelty`
 - **Defaults**:
   - temperature: 0.5
   - paper_domain: "Urban Science" (CAMP only)
@@ -270,7 +270,7 @@ Build the request body using Python so the API key never appears in shell proces
 
 ```bash
 _ULM_TOPIC="<topic>" \
-_ULM_METHOD="<camp_or_direct>" \
+_ULM_METHOD="camp" \
 _ULM_TEMP="<temperature>" \
 _ULM_DOMAIN="<paper_domain>" \
 _ULM_LIMIT="<retrieval_limit>" \
