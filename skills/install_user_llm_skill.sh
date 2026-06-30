@@ -12,6 +12,7 @@ set -euo pipefail
 SKILL_NAME="idea-creator-user-llm"
 SKILL_SRC="https://raw.githubusercontent.com/phycholosogy/Urban_AI_Scientist/main/skills/SKILL_user_llm.md"
 SKILL_DIR="$HOME/.claude/skills/$SKILL_NAME"
+SKILL_FILE="$SKILL_DIR/SKILL.md"
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
@@ -61,14 +62,14 @@ success "Skill directory: $SKILL_DIR"
 
 # ── Download skill definition ──────────────────────────────────────────────────
 info "Downloading skill definition..."
-if curl -fsSL --max-time 30 "$SKILL_SRC" -o "$HOME/.claude/skills/$SKILL_NAME.md" 2>/dev/null; then
-  success "Skill file saved to ~/.claude/skills/$SKILL_NAME.md"
+if curl -fsSL --max-time 30 "$SKILL_SRC" -o "$SKILL_FILE" 2>/dev/null; then
+  success "Skill file saved to $SKILL_FILE"
 else
   warn "Could not download from GitHub. Using local copy if available."
   # Fallback: check if we're running from the project directory
   LOCAL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/SKILL_user_llm.md"
   if [ -f "$LOCAL" ]; then
-    cp "$LOCAL" "$HOME/.claude/skills/$SKILL_NAME.md"
+    cp "$LOCAL" "$SKILL_FILE"
     success "Copied from local: $LOCAL"
   else
     error "Skill definition not found. Check your internet connection."
@@ -199,7 +200,7 @@ echo "╔═══════════════════════�
 echo "║                   Installation Complete              ║"
 echo "╚══════════════════════════════════════════════════════╝"
 echo ""
-echo "  Skill file : ~/.claude/skills/$SKILL_NAME.md"
+echo "  Skill file : $SKILL_FILE"
 echo "  Credentials: $CRED_FILE"
 echo ""
 echo "  Usage in Claude Code:"
