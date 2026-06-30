@@ -9,13 +9,14 @@ allowed-tools: Bash(*), Read, Write, WebSearch, WebFetch
 
 Generate structured research ideas by supplying your own LLM API key.
 
-Three methods:
+Four modes:
 - **CAMP**: Server-side paper retrieval → CAMP hypothesis generation → idea (calls backend, requires API key)
 - **DIRECT**: Claude-native reasoning — no external API, no backend, no credentials needed. Claude autonomously decides whether to search for relevant papers using its built-in web search tools, then designs the research strategy and generates the idea.
 - **FAST**: Direct LLM call — generates 1 idea using a built-in urban science expert prompt. Requires API key; no backend needed.
+- **novelty `<path>`**: Novelty check on an already-generated idea `.md` file. Searches Semantic Scholar or arXiv, analyzes related papers, and appends a `## Novelty Check` section to the file. Requires API key + optional Semantic Scholar API key.
 
-⚠️ **Security notice (CAMP/FAST only)**: Your API key is sent in the HTTPS request body
-to the configured server (CAMP) or your own LLM provider (FAST). Only use with a backend you trust.
+⚠️ **Security notice (CAMP / FAST / novelty)**: Your API key is sent in the HTTPS request body
+to the configured server (CAMP/novelty) or your own LLM provider (FAST). Only use with a backend you trust.
 
 ## Usage
 
@@ -24,18 +25,22 @@ to the configured server (CAMP) or your own LLM provider (FAST). Only use with a
 /idea-creator-user-llm CAMP --paper_domain Economics 城市化与贫富差距
 /idea-creator-user-llm DIRECT --temperature 0.7 LLM与公共政策
 /idea-creator-user-llm CAMP --retrieval_limit 8 --retrieval_method dense 气候变化与城市韧性
+/idea-creator-user-llm novelty ./idea-output/2026-06-29_urban_heat_camp.md
+/idea-creator-user-llm novelty --source arxiv ./idea-output/2026-06-29_urban_heat_camp.md
 ```
 
-## Credentials Setup (CAMP and FAST only — not required for DIRECT)
+## Credentials Setup (CAMP, FAST, and novelty — not required for DIRECT)
 
 Create `~/.claude/skills/idea-creator-user-llm/credentials.json`:
 ```json
 {
   "openai_api_key": "sk-...",
   "openai_base_url": "https://api.openai.com/v1",
-  "llm_model": "gpt-4o-mini"
+  "llm_model": "gpt-4o-mini",
+  "semantic_scholar_api_key": ""
 }
 ```
+`semantic_scholar_api_key` is optional but recommended to avoid rate limits. Leave as `""` to use the unauthenticated API.
 
 Alternatively set environment variables `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `LLM_MODEL`
 (env vars take precedence over the file).
@@ -61,18 +66,21 @@ automatically from the project's GitHub Pages config — no local setup required
 ### Step 1: Parse Arguments
 
 Parse in order:
-1. **Method**: `CAMP`, `DIRECT`, or `FAST` (case-insensitive, first positional arg)
+1. **Mode**: `CAMP`, `DIRECT`, `FAST`, or `novelty` (case-insensitive, first positional arg)
 2. **Optional flags**:
-   - `--temperature <float>`
+   - `--temperature <float>` (CAMP/FAST/novelty)
    - `--paper_domain <string>` (CAMP only)
    - `--retrieval_limit <int>` (CAMP only)
    - `--retrieval_method <string>` (CAMP only)
-3. **Topic**: all remaining text
+   - `--source <semantic|arxiv>` (novelty only, default: `semantic`)
+3. **Topic or path**:
+   - CAMP/DIRECT/FAST: all remaining text is the research topic
+   - novelty: single argument is the path to an existing `.md` file
 
-If method is missing: ask the user to specify one.
-If topic is empty: ask the user for a topic.
+If mode is missing: ask the user to specify one.
+If topic/path is empty: ask the user for it.
 
-### Step 2: Load Credentials (CAMP and FAST only)
+### Step 2: Load Credentials (CAMP, FAST, and novelty only)
 
 **DIRECT skips this step entirely** — go straight to Step 3.
 
@@ -81,26 +89,30 @@ if [ -n "$OPENAI_API_KEY" ] && [ -n "$OPENAI_BASE_URL" ] && [ -n "$LLM_MODEL" ];
   _OPENAI_API_KEY="$OPENAI_API_KEY"
   _OPENAI_BASE_URL="$OPENAI_BASE_URL"
   _LLM_MODEL="$LLM_MODEL"
+  _S2_API_KEY="${SEMANTIC_SCHOLAR_API_KEY:-}"
 else
   CRED_FILE=~/.claude/skills/idea-creator-user-llm/credentials.json
   if [ ! -f "$CRED_FILE" ]; then
     echo "ERROR: LLM credentials not found."
     echo "Create $CRED_FILE:"
-    echo '  {"openai_api_key": "sk-...", "openai_base_url": "https://...", "llm_model": "gpt-4o-mini"}'
+    echo '  {"openai_api_key": "sk-...", "openai_base_url": "https://...", "llm_model": "gpt-4o-mini", "semantic_scholar_api_key": ""}'
     echo "Or set env vars OPENAI_API_KEY, OPENAI_BASE_URL, LLM_MODEL."
     exit 1
   fi
   _OPENAI_API_KEY=$(python3 -c "import json; print(json.load(open('$CRED_FILE'))['openai_api_key'])")
   _OPENAI_BASE_URL=$(python3 -c "import json; print(json.load(open('$CRED_FILE'))['openai_base_url'])")
   _LLM_MODEL=$(python3 -c "import json; print(json.load(open('$CRED_FILE'))['llm_model'])")
+  _S2_API_KEY=$(python3 -c "import json; print(json.load(open('$CRED_FILE')).get('semantic_scholar_api_key',''))")
 fi
 ```
 
-### Step 3: Branch by Method
+### Step 3: Branch by Mode
 
 #### DIRECT path — skip all credential and backend steps, go directly to Step 4-DIRECT
 
 #### FAST path — credentials already loaded, skip backend URL, go directly to Step 4-FAST
+
+#### novelty path — credentials already loaded, resolve backend URL (same as CAMP), go to Step 4-NOVELTY
 
 #### CAMP path — resolve backend URL:
 
@@ -325,6 +337,111 @@ On `error`: STOP and report. On `done`: `new_idea` field contains the generated 
 
 **NEVER print `_OPENAI_API_KEY` in any output.**
 
+### Step 4-NOVELTY: Call Backend Novelty Check
+
+First, parse the `.md` file to extract Title and Abstract:
+
+```bash
+_ULM_MD_PATH="<path to .md file>"
+_ULM_SOURCE="<semantic|arxiv>"  # default: semantic
+
+python3 - << 'PYEOF'
+import os, re, sys
+
+md_path = os.environ["_ULM_MD_PATH"]
+with open(md_path, encoding="utf-8") as f:
+    content = f.read()
+
+# Extract Title (line after "## Title")
+title_m = re.search(r"##\s+Title\s*\n+(.+)", content)
+# Extract Abstract (text after "## Abstract" until next ## or end)
+abstract_m = re.search(r"##\s+Abstract\s*\n+([\s\S]+?)(?=\n##|\Z)", content)
+
+if not title_m or not abstract_m:
+    print("ERROR: Could not find Title or Abstract in the .md file.", file=sys.stderr)
+    sys.exit(1)
+
+title    = title_m.group(1).strip()
+abstract = abstract_m.group(1).strip()
+
+with open("/tmp/urban_ai_novelty_input.json", "w", encoding="utf-8") as f:
+    import json
+    json.dump({"title": title, "abstract": abstract}, f, ensure_ascii=False)
+
+print(f"Title:    {title[:80]}")
+print(f"Abstract: {abstract[:120]}...")
+PYEOF
+```
+
+If parsing fails: STOP and report. Then call the backend:
+
+```bash
+_OPENAI_API_KEY="$_OPENAI_API_KEY" \
+_OPENAI_BASE_URL="$_OPENAI_BASE_URL" \
+_LLM_MODEL="$_LLM_MODEL" \
+_S2_API_KEY="$_S2_API_KEY" \
+_ULM_SOURCE="$_ULM_SOURCE" \
+_ULM_TEMP="<temperature>" \
+_API_BASE="$API_BASE" \
+python3 - << 'PYEOF'
+import json, os, sys, urllib.request, urllib.error
+
+api_key = os.environ["_OPENAI_API_KEY"]
+s2_key  = os.environ.get("_S2_API_KEY", "")
+api_base = os.environ["_API_BASE"]
+
+with open("/tmp/urban_ai_novelty_input.json", encoding="utf-8") as f:
+    idea = json.load(f)
+
+body = {
+    "title":                     idea["title"],
+    "abstract":                  idea["abstract"],
+    "source":                    os.environ.get("_ULM_SOURCE", "semantic"),
+    "openai_api_key":            api_key,
+    "openai_base_url":           os.environ["_OPENAI_BASE_URL"],
+    "llm_model":                 os.environ["_LLM_MODEL"],
+    "temperature":               float(os.environ.get("_ULM_TEMP", "0.5")),
+    "semantic_scholar_api_key":  s2_key,
+}
+
+req = urllib.request.Request(
+    f"{api_base}/api/novelty/stream",
+    data=json.dumps(body).encode(),
+    headers={"Content-Type": "application/json"},
+    method="POST",
+)
+try:
+    with urllib.request.urlopen(req, timeout=300) as resp:
+        done_data = None
+        for raw_line in resp:
+            line = raw_line.decode("utf-8", errors="replace").strip()
+            if not line.startswith("data:"):
+                continue
+            payload = json.loads(line[5:].strip())
+            event = payload.get("event")
+            if event == "step":
+                print(f"  [{payload.get('label', payload.get('key',''))}] ✓", flush=True)
+            elif event == "error":
+                msg = payload.get("message", "unknown error")
+                print(f"\nERROR: {msg}", file=sys.stderr)
+                sys.exit(1)
+            elif event == "done":
+                done_data = payload
+                break
+        if done_data:
+            with open("/tmp/urban_ai_novelty_done.json", "w", encoding="utf-8") as f:
+                json.dump(done_data, f, ensure_ascii=False, indent=2)
+except urllib.error.URLError as e:
+    msg = str(e).replace(api_key, api_key[:4] + "****" + api_key[-4:])
+    print(f"\nERROR: Cannot reach backend: {msg}", file=sys.stderr)
+    sys.exit(1)
+PYEOF
+```
+
+On `error`: STOP and report. On `done`: result is in `/tmp/urban_ai_novelty_done.json`.
+
+**NEVER print `_OPENAI_API_KEY` or `_S2_API_KEY` in any output.**
+
 ### Step 5: Save Result
 
 Save to `./idea-output/` relative to the **current working directory**.
@@ -376,7 +493,7 @@ Filename: `./idea-output/YYYY-MM-DD_<topic-slug>_direct.md`
 
 #### CAMP — save single idea from `/tmp/urban_ai_done.json`:
 
-Filename: `./idea-output/YYYY-MM-DD_<topic-slug>_<method>.md`
+Filename: `./idea-output/YYYY-MM-DD_<topic-slug>_camp.md`
 
 ```markdown
 # Generated Idea
@@ -394,6 +511,36 @@ Filename: `./idea-output/YYYY-MM-DD_<topic-slug>_<method>.md`
 <new_idea["Abstract"] or new_idea["abstract"]>
 ```
 
+#### novelty — append `## Novelty Check` to the **original input `.md` file**:
+
+Do NOT create a new file. Open the input `.md` file and append the section below.
+Read `/tmp/urban_ai_novelty_done.json` to get `summarized_novelty_result` and `analyzed_papers`.
+
+```markdown
+
+---
+
+## Novelty Check
+
+**Source**: semantic / arxiv
+**Model**: <llm_model>
+**Checked**: <ISO timestamp>
+
+### Summary
+
+<summarized_novelty_result>
+
+### Papers Analyzed (<N> papers)
+
+1. **<analyzed_papers[0].title>**
+   <analyzed_papers[0].analysis>
+
+2. **<analyzed_papers[1].title>**
+   <analyzed_papers[1].analysis>
+
+... (all analyzed papers)
+```
+
 ### Step 6: Display Results
 
 Show:
@@ -407,9 +554,9 @@ Show:
 ## Key Rules
 
 ### Security
-- **NEVER print, echo, or log `_OPENAI_API_KEY`** in any output or error message.
+- **NEVER print, echo, or log `_OPENAI_API_KEY` or `_S2_API_KEY`** in any output or error message.
 - Pass credentials via environment variables into the Python subprocess — never inline in shell arguments.
-- Mask the key (first4****last4) before displaying any error message that might contain it.
+- Mask both keys (first4****last4) before displaying any error message that might contain them.
 - **DIRECT requires no credentials** — do not prompt for them.
 
 ### Autonomy
