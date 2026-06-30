@@ -145,6 +145,20 @@ else
   LLM_MODEL="${INPUT_MODEL:-$DEFAULT_MODEL}"
 fi
 
+# Optional: Semantic Scholar API key (for novelty subcommand)
+EXISTING_S2=""
+if [ -f "$CRED_FILE" ]; then
+  EXISTING_S2=$(python3 -c "import json; d=json.load(open('$CRED_FILE')); print(d.get('semantic_scholar_api_key',''))" 2>/dev/null || echo "")
+fi
+if [ -n "$EXISTING_S2" ]; then
+  MASKED_S2="${EXISTING_S2:0:4}****"
+  warn "Existing Semantic Scholar key found: $MASKED_S2"
+  read -rp "  Press Enter to keep it, or type a new key (optional): " INPUT_S2
+  S2_API_KEY="${INPUT_S2:-$EXISTING_S2}"
+else
+  read -rp "  Semantic Scholar API key (optional, press Enter to skip): " S2_API_KEY
+fi
+
 # Validate: key must not be empty
 if [ -z "$OPENAI_API_KEY" ]; then
   error "API key cannot be empty."
@@ -155,9 +169,10 @@ fi
 python3 - << PYEOF
 import json
 cred = {
-    "openai_api_key":  "$OPENAI_API_KEY",
-    "openai_base_url": "$OPENAI_BASE_URL",
-    "llm_model":       "$LLM_MODEL",
+    "openai_api_key":           "$OPENAI_API_KEY",
+    "openai_base_url":          "$OPENAI_BASE_URL",
+    "llm_model":                "$LLM_MODEL",
+    "semantic_scholar_api_key": "$S2_API_KEY",
 }
 with open("$CRED_FILE", "w") as f:
     json.dump(cred, f, indent=2)
@@ -207,8 +222,9 @@ echo "  Usage in Claude Code:"
 echo "    /idea-creator-user-llm FAST 城市交通与碳排放"
 echo "    /idea-creator-user-llm CAMP --paper_domain Economics 城市化与贫富差距"
 echo "    /idea-creator-user-llm DIRECT --temperature 0.7 LLM与公共政策"
+echo "    /idea-creator-user-llm novelty ./output/my_idea.md"
 echo ""
-echo "  Methods:  CAMP | DIRECT | FAST"
+echo "  Methods:  CAMP | DIRECT | FAST | novelty"
 echo "  Model:    $LLM_MODEL"
 echo "  Base URL: $OPENAI_BASE_URL"
 echo ""
